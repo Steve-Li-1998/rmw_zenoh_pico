@@ -31,7 +31,8 @@ uint64_t zenoh_pico_gen_timestamp(void) {
 
 uint64_t attachment_sequence_num_inc(zenoh_pico_attachemt_data *data)
 {
-  return data->sequence_num ++;
+  // the value that goes into the attachment, so that the caller can match the reply to it
+  return ++data->sequence_num;
 }
 
 #define CHECK_ATTACHMENT_DESERIALIZE_STRING(data, value)		\

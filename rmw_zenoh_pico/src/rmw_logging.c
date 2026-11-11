@@ -19,6 +19,17 @@
 
 static z_owned_mutex_t mutex_logging;
 
+// On Zephyr the console is reached through printk(). printf() goes through the
+// C library's stdout, which is not usable on every board: on an ESP32-C6 with
+// newlib it ends in a load access fault, so that the first error message
+// crashed the board.
+#if defined(ZENOH_ZEPHYR)
+#include <zephyr/sys/printk.h>
+#define RMW_ZENOH_PICO_LOG_PRINT printk
+#else
+#define RMW_ZENOH_PICO_LOG_PRINT printf
+#endif
+
 // Timestamp function
 #if defined(ZENOH_LINUX) || defined(ZENOH_ARDUINO_ESP32) || \
   defined(ZENOH_ESPIDF) || defined(ZENOH_ZEPHYR)
@@ -38,7 +49,7 @@ void z_log_prefix(const char *prefix, const char *func_name, const char *fmt, ..
   (void)vsnprintf(msg, sizeof(msg) - 1, fmt, args);
   va_end(args);
 
-  printf("[%-5s] [%s] [%s] : %s\n",  prefix, tstamp, func_name, msg);
+  RMW_ZENOH_PICO_LOG_PRINT("[%-5s] [%s] [%s] : %s\n",  prefix, tstamp, func_name, msg);
 }
 #else
 #error "Unsupported platform"

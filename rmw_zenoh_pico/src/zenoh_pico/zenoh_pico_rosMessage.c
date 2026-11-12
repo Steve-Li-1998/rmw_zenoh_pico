@@ -373,6 +373,26 @@ ReceiveMessageData *recv_msg_list_append_limited(ReceiveMessageDataList *msg_lis
   return oldest;
 }
 
+// Puts recv_data back at the head of the list, for a take that could not be completed.
+void recv_msg_list_prepend(ReceiveMessageDataList *msg_list,
+			   ReceiveMessageData *recv_data)
+{
+  if((msg_list == NULL) || (recv_data == NULL))
+    return;
+
+  z_loaned_mutex_t *msg_mutex = z_loan_mut(msg_list->mutex);
+
+  z_mutex_lock(msg_mutex);
+
+  recv_data->next = msg_list->que_top;
+  msg_list->que_top = recv_data;
+  if(msg_list->que_bottom == NULL)
+    msg_list->que_bottom = recv_data;
+  msg_list->count += 1;
+
+  z_mutex_unlock(msg_mutex);
+}
+
 ReceiveMessageData *recv_msg_list_pop(ReceiveMessageDataList *msg_list)
 {
 
@@ -512,17 +532,11 @@ void recv_msg_list_debug(ReceiveMessageDataList *msg_list)
 // ----------------------------
 
 rmw_ret_t
-rmw_zenoh_pico_publish(ZenohPicoPubData *pub_data,
-		       const void * ros_message)
+rmw_zenoh_pico_publish_bytes(ZenohPicoPubData *pub_data,
+			     const uint8_t * msg_bytes,
+			     size_t data_length)
 {
   RMW_ZENOH_FUNC_ENTRY(NULL);
-
-  size_t data_length;
-  uint8_t * msg_bytes = rmw_zenoh_pico_serialize(pub_data->callbacks,
-						 ros_message,
-						 &data_length);
-  if(msg_bytes == NULL)
-    return RMW_RET_ERROR;
 
   z_mutex_lock(z_loan_mut(pub_data->mutex));
 
@@ -547,12 +561,52 @@ rmw_zenoh_pico_publish(ZenohPicoPubData *pub_data,
   z_result_t ret = z_publisher_put(z_loan(pub_data->topic),
 				   z_move(payload),
 				   &options);
-  TOPIC_FREE(msg_bytes);
   z_drop(z_move(attachment));
 
   z_mutex_unlock(z_loan_mut(pub_data->mutex));
 
   return ret == _Z_RES_OK ?  RMW_RET_OK : RMW_RET_ERROR;
+}
+
+rmw_ret_t
+rmw_zenoh_pico_publish(ZenohPicoPubData *pub_data,
+		       const void * ros_message)
+{
+  RMW_ZENOH_FUNC_ENTRY(NULL);
+
+  size_t data_length;
+  uint8_t * msg_bytes = rmw_zenoh_pico_serialize(pub_data->callbacks,
+						 ros_message,
+						 &data_length);
+  if(msg_bytes == NULL)
+    return RMW_RET_ERROR;
+
+  rmw_ret_t ret = rmw_zenoh_pico_publish_bytes(pub_data, msg_bytes, data_length);
+  TOPIC_FREE(msg_bytes);
+
+  return ret;
+}
+
+// Fills message_info from the attachment and the reception data of a sample.
+void
+rmw_zenoh_pico_fill_message_info(ReceiveMessageData *msg_data,
+				 rmw_message_info_t * message_info)
+{
+  message_info->source_timestamp		= msg_data->attachment.timestamp;
+  message_info->received_timestamp		= msg_data->recv_timestamp;
+  message_info->publication_sequence_number	= msg_data->attachment.sequence_num;
+  message_info->reception_sequence_number	= msg_data->sequence_num;
+
+  message_info->publisher_gid.implementation_identifier = rmw_get_implementation_identifier();
+
+  const uint8_t *gid_ptr = z_slice_data(z_loan(msg_data->attachment.gid));
+  size_t gid_len = z_slice_len(z_loan(msg_data->attachment.gid));
+  if(gid_len > sizeof(message_info->publisher_gid.data))
+    memcpy(message_info->publisher_gid.data, gid_ptr, sizeof(message_info->publisher_gid.data));
+  else
+    memcpy(message_info->publisher_gid.data, gid_ptr, gid_len);
+
+  message_info->from_intra_process = false;
 }
 
 bool
@@ -570,23 +624,8 @@ rmw_zenoh_pico_deserialize_topic_msg(
 				 ros_message))
     return false;
 
-  if (message_info != NULL) {
-    message_info->source_timestamp		= msg_data->attachment.timestamp;
-    message_info->received_timestamp		= msg_data->recv_timestamp;
-    message_info->publication_sequence_number	= msg_data->attachment.sequence_num;
-    message_info->reception_sequence_number	= msg_data->sequence_num;
-
-    message_info->publisher_gid.implementation_identifier = rmw_get_implementation_identifier();
-
-    const uint8_t *gid_ptr = z_slice_data(z_loan(msg_data->attachment.gid));
-    size_t gid_len = z_slice_len(z_loan(msg_data->attachment.gid));
-    if(gid_len > sizeof(message_info->publisher_gid.data))
-      memcpy(message_info->publisher_gid.data, gid_ptr, sizeof(message_info->publisher_gid.data));
-    else
-      memcpy(message_info->publisher_gid.data, gid_ptr, gid_len);
-
-    message_info->from_intra_process = false;
-  }
+  if (message_info != NULL)
+    rmw_zenoh_pico_fill_message_info(msg_data, message_info);
 
   return true;
 }

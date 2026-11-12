@@ -24,11 +24,33 @@ rmw_serialize(
 {
   RMW_ZENOH_FUNC_ENTRY(NULL);
 
-  (void)ros_message;
-  (void)type_support;
-  (void)serialized_message;
-  RMW_ZENOH_LOG_INFO("function not implemented");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(ros_message, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(type_support, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialized_message, RMW_RET_INVALID_ARGUMENT);
+
+  const rosidl_message_type_support_t * ts = find_message_type_support(type_support);
+  if(ts == NULL)
+    return RMW_RET_ERROR;	// error was already set by find_message_type_support
+
+  size_t size = 0;
+  uint8_t * msg_bytes = rmw_zenoh_pico_serialize((const message_type_support_callbacks_t *)ts->data,
+						 ros_message,
+						 &size);
+  if(msg_bytes == NULL)
+    return RMW_RET_ERROR;
+
+  if((serialized_message->buffer_capacity < size) &&
+     (rmw_serialized_message_resize(serialized_message, size) != RMW_RET_OK)){
+    TOPIC_FREE(msg_bytes);
+    RMW_SET_ERROR_MSG("serialized message buffer is too small and cannot be resized");
+    return RMW_RET_ERROR;
+  }
+
+  memcpy(serialized_message->buffer, msg_bytes, size);
+  serialized_message->buffer_length = size;
+  TOPIC_FREE(msg_bytes);
+
+  return RMW_RET_OK;
 }
 
 rmw_ret_t
@@ -39,11 +61,23 @@ rmw_deserialize(
 {
   RMW_ZENOH_FUNC_ENTRY(NULL);
 
-  (void)serialized_message;
-  (void)type_support;
-  (void)ros_message;
-  RMW_ZENOH_LOG_INFO("function not implemented");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialized_message, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(type_support, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(ros_message, RMW_RET_INVALID_ARGUMENT);
+
+  const rosidl_message_type_support_t * ts = find_message_type_support(type_support);
+  if(ts == NULL)
+    return RMW_RET_ERROR;	// error was already set by find_message_type_support
+
+  if(!rmw_zenoh_pico_deserialize(serialized_message->buffer,
+				 serialized_message->buffer_length,
+				 (const message_type_support_callbacks_t *)ts->data,
+				 ros_message)){
+    RMW_SET_ERROR_MSG("Typesupport deserialize error.");
+    return RMW_RET_ERROR;
+  }
+
+  return RMW_RET_OK;
 }
 
 rmw_ret_t

@@ -500,11 +500,19 @@ rmw_publish_serialized_message(const rmw_publisher_t * publisher,
 {
   RMW_ZENOH_FUNC_ENTRY(publisher);
 
-  (void)publisher;
-  (void)serialized_message;
   (void)allocation;
-  RMW_ZENOH_LOG_INFO("function not implemented");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(publisher, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(publisher->data, RMW_RET_ERROR);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialized_message, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialized_message->buffer, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_TYPE_IDENTIFIERS_MATCH(
+    publisher->implementation_identifier,
+    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION);
+
+  // The bytes are sent as they are: CDR encapsulation header and CDR data
+  return rmw_zenoh_pico_publish_bytes((ZenohPicoPubData *)publisher->data,
+				      serialized_message->buffer,
+				      serialized_message->buffer_length);
 }
 
 rmw_ret_t

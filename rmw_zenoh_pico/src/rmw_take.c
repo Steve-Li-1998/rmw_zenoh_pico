@@ -176,6 +176,40 @@ rmw_take_sequence(const rmw_subscription_t * subscription,
   return ret;
 }
 
+// Takes one sample without deserializing it. The bytes are the payload as it was
+// published: the 4 bytes of the CDR encapsulation header and the CDR data.
+static rmw_ret_t rmw_zenoh_pico_take_one_serialized(ZenohPicoSubData *sub_data,
+						    rmw_serialized_message_t * serialized_message,
+						    rmw_message_info_t * message_info,
+						    bool * taken)
+{
+  *taken = false;
+
+  ReceiveMessageData *msg_data = recv_msg_list_pop(&sub_data->message_queue);
+  if(msg_data == NULL)
+    return RMW_RET_OK;
+
+  if(serialized_message->buffer_capacity < msg_data->payload_size){
+    if(rmw_serialized_message_resize(serialized_message, msg_data->payload_size) != RMW_RET_OK){
+      // The sample stays in the queue, as the oldest one
+      recv_msg_list_prepend(&sub_data->message_queue, msg_data);
+      RMW_SET_ERROR_MSG("serialized message buffer is too small and cannot be resized");
+      return RMW_RET_ERROR;
+    }
+  }
+
+  memcpy(serialized_message->buffer, msg_data->payload_start, msg_data->payload_size);
+  serialized_message->buffer_length = msg_data->payload_size;
+
+  if(message_info != NULL)
+    rmw_zenoh_pico_fill_message_info(msg_data, message_info);
+
+  zenoh_pico_delete_recv_msg_data(msg_data);
+  *taken = true;
+
+  return RMW_RET_OK;
+}
+
 rmw_ret_t
 rmw_take_serialized_message(const rmw_subscription_t * subscription,
 			    rmw_serialized_message_t * serialized_message,
@@ -184,12 +218,17 @@ rmw_take_serialized_message(const rmw_subscription_t * subscription,
 {
   RMW_ZENOH_FUNC_ENTRY(subscription);
 
-  (void)subscription;
-  (void)serialized_message;
-  (void)taken;
   (void)allocation;
-  RMW_ZENOH_LOG_INFO("function not implemented");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(subscription, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(subscription->data, RMW_RET_ERROR);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialized_message, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(taken, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_TYPE_IDENTIFIERS_MATCH(
+    subscription->implementation_identifier,
+    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION);
+
+  return rmw_zenoh_pico_take_one_serialized((ZenohPicoSubData *)subscription->data,
+					    serialized_message, NULL, taken);
 }
 
 rmw_ret_t
@@ -201,13 +240,18 @@ rmw_take_serialized_message_with_info(const rmw_subscription_t * subscription,
 {
   RMW_ZENOH_FUNC_ENTRY(subscription);
 
-  (void)subscription;
-  (void)serialized_message;
-  (void)taken;
-  (void)message_info;
   (void)allocation;
-  RMW_ZENOH_LOG_INFO("function not implemented");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(subscription, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(subscription->data, RMW_RET_ERROR);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialized_message, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(taken, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(message_info, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_TYPE_IDENTIFIERS_MATCH(
+    subscription->implementation_identifier,
+    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION);
+
+  return rmw_zenoh_pico_take_one_serialized((ZenohPicoSubData *)subscription->data,
+					    serialized_message, message_info, taken);
 }
 
 rmw_ret_t

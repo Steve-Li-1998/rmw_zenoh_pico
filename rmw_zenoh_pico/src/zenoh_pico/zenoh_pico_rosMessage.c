@@ -373,24 +373,47 @@ ReceiveMessageData *recv_msg_list_append_limited(ReceiveMessageDataList *msg_lis
   return oldest;
 }
 
-// Puts recv_data back at the head of the list, for a take that could not be completed.
-void recv_msg_list_prepend(ReceiveMessageDataList *msg_list,
-			   ReceiveMessageData *recv_data)
+// Takes the oldest message out of the list if its payload fits into capacity
+// bytes. If it does not fit, the message stays where it is, NULL is returned and
+// *needed is the size of its payload. *needed is 0 when the list is empty.
+// Size check and removal happen under one lock of the list, so that another
+// thread taking from the list cannot get a newer message before this one.
+ReceiveMessageData *recv_msg_list_pop_fitting(ReceiveMessageDataList *msg_list,
+					      size_t capacity,
+					      size_t *needed)
 {
-  if((msg_list == NULL) || (recv_data == NULL))
-    return;
+  *needed = 0;
+
+  if(msg_list == NULL)
+    return NULL;
 
   z_loaned_mutex_t *msg_mutex = z_loan_mut(msg_list->mutex);
 
   z_mutex_lock(msg_mutex);
 
-  recv_data->next = msg_list->que_top;
-  msg_list->que_top = recv_data;
-  if(msg_list->que_bottom == NULL)
-    msg_list->que_bottom = recv_data;
-  msg_list->count += 1;
+  ReceiveMessageData *top_msg = msg_list->que_top;
+  if(top_msg == NULL){
+    z_mutex_unlock(msg_mutex);
+    return NULL;
+  }
+
+  if(top_msg->payload_size > capacity){
+    *needed = top_msg->payload_size;
+    z_mutex_unlock(msg_mutex);
+    return NULL;
+  }
+
+  msg_list->que_top = top_msg->next;
+  msg_list->count -= 1;
+
+  if(msg_list->que_bottom == top_msg)
+    msg_list->que_bottom = NULL;
+
+  top_msg->next = NULL;
 
   z_mutex_unlock(msg_mutex);
+
+  return top_msg;
 }
 
 ReceiveMessageData *recv_msg_list_pop(ReceiveMessageDataList *msg_list)

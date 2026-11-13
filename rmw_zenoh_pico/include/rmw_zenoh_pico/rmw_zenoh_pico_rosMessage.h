@@ -91,8 +91,9 @@ extern "C"
   extern ReceiveMessageData *recv_msg_list_append_limited(ReceiveMessageDataList *msg_list,
 							   ReceiveMessageData *recv_data,
 							   size_t limit);
-  extern void recv_msg_list_prepend(ReceiveMessageDataList *msg_list,
-				    ReceiveMessageData *recv_data);
+  extern ReceiveMessageData *recv_msg_list_pop_fitting(ReceiveMessageDataList *msg_list,
+							size_t capacity,
+							size_t *needed);
   extern ReceiveMessageData *recv_msg_list_pop(ReceiveMessageDataList *msg_list);
   extern ReceiveMessageData *recv_msg_list_pickup(ReceiveMessageDataList *msg_list,
 						  bool (*func)(ReceiveMessageData *, const void *),

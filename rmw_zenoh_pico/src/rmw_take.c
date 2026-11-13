@@ -185,14 +185,24 @@ static rmw_ret_t rmw_zenoh_pico_take_one_serialized(ZenohPicoSubData *sub_data,
 {
   *taken = false;
 
-  ReceiveMessageData *msg_data = recv_msg_list_pop(&sub_data->message_queue);
-  if(msg_data == NULL)
-    return RMW_RET_OK;
+  // The oldest sample leaves the queue only when the buffer can hold it. Another
+  // thread may take it between a resize and the next attempt, and the sample that
+  // is then the oldest may be larger, hence the loop.
+  ReceiveMessageData *msg_data = NULL;
+  for(;;){
+    size_t needed = 0;
 
-  if(serialized_message->buffer_capacity < msg_data->payload_size){
-    if(rmw_serialized_message_resize(serialized_message, msg_data->payload_size) != RMW_RET_OK){
-      // The sample stays in the queue, as the oldest one
-      recv_msg_list_prepend(&sub_data->message_queue, msg_data);
+    msg_data = recv_msg_list_pop_fitting(&sub_data->message_queue,
+					 serialized_message->buffer_capacity,
+					 &needed);
+    if(msg_data != NULL)
+      break;
+
+    if(needed == 0)
+      return RMW_RET_OK;	// nothing to take
+
+    if(rmw_serialized_message_resize(serialized_message, needed) != RMW_RET_OK){
+      // The sample is still in the queue, as the oldest one
       RMW_SET_ERROR_MSG("serialized message buffer is too small and cannot be resized");
       return RMW_RET_ERROR;
     }

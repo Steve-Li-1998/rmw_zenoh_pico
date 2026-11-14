@@ -28,6 +28,9 @@
 #define RMW_ZENOH_CLIENT_MODE "client"
 #define RMW_ZENOH_PEER_MODE   "peer"
 
+#include <rmw/ret_types.h>
+#include <rmw/types.h>
+
 #if defined(__cplusplus)
 extern "C"
 {
@@ -48,6 +51,15 @@ extern "C"
 #elif defined (RMW_ZENOH_PICO_TRANSPORT_SERIAL)
   extern void rmw_zenoh_pico_set_serial_device(const char *device);
 #endif
+
+  // The sequence number of the sample that the publisher sent last, the one a
+  // subscriber finds as publication_sequence_number in the sample's message
+  // info. It is 0 before the first publish. A publish that fails in the
+  // transport has used a number as well. To pair a publish with its number
+  // when several threads use one publisher, call both under a lock of the
+  // application.
+  extern rmw_ret_t rmw_zenoh_pico_get_last_sequence_number(const rmw_publisher_t *publisher,
+							   uint64_t *sequence_number);
 
   extern int rmw_zenoh_pico_debug_level_get(void);
   extern int rmw_zenoh_pico_debug_level_set(int);

@@ -494,6 +494,27 @@ rmw_publish(const rmw_publisher_t * publisher,
 }
 
 rmw_ret_t
+rmw_zenoh_pico_get_last_sequence_number(const rmw_publisher_t *publisher,
+					uint64_t *sequence_number)
+{
+  RMW_CHECK_ARGUMENT_FOR_NULL(publisher, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(publisher->data, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(sequence_number, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_TYPE_IDENTIFIERS_MATCH(
+    publisher->implementation_identifier,
+    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION);
+
+  ZenohPicoPubData *pub_data = (ZenohPicoPubData *)publisher->data;
+
+  // The same mutex as around the increment in rmw_zenoh_pico_publish_bytes()
+  z_mutex_lock(z_loan_mut(pub_data->mutex));
+  *sequence_number = (uint64_t)pub_data->attachment.sequence_num;
+  z_mutex_unlock(z_loan_mut(pub_data->mutex));
+
+  return RMW_RET_OK;
+}
+
+rmw_ret_t
 rmw_publish_serialized_message(const rmw_publisher_t * publisher,
 			       const rmw_serialized_message_t * serialized_message,
 			       rmw_publisher_allocation_t * allocation)
